@@ -72,8 +72,8 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
         await message.answer(
             "<b>Не вижу бота в этом канале.</b>\n\n"
             "<blockquote>"
-            "<b>Не вижу бота в этом канале. Добавьте бота в канал администратором</b>"
-            "<b>с правом редактировать сообщения и перешлите сообщение ещё раз.</b>"
+            "Добавьте бота в канал администратором с правом «Редактировать "
+            "сообщения других участников» и перешлите сообщение ещё раз."
             "</blockquote>",
             parse_mode="HTML",
         )
@@ -111,7 +111,8 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
 @router.message(NewLotStates.waiting_forward)
 async def new_lot_waiting_forward_fallback(message: Message):
     await message.answer(
-        "<tg-emoji emoji-id=\"5210956306952758910\">👀</tg-emoji><b>Жду пересланное сообщение из канала, а не обычный текст.</b>"),
+        "<tg-emoji emoji-id=\"5210956306952758910\">👀</tg-emoji>"
+        "<b>Жду пересланное сообщение из канала, а не обычный текст.</b>",
         parse_mode="HTML",
     )
  
@@ -206,8 +207,8 @@ async def new_lot_datetime(message: Message, state: FSMContext):
     await state.set_state(NewLotStates.confirm)
     await message.answer(
         "<b>Проверьте розыгрыш перед публикацией:</b>\n\n"
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b> Канал:</b> {html.escape(giveaway['channel_title'])}\n"
-        f"<tg-emoji emoji-id=\"5438496463044752972\">⭐️</tg-emoji><b> Кнопка:</b> {html.escape(giveaway['button_text'])}\n"
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b> Канал:</b> {esc(giveaway['channel_title'])}\n"
+        f"<tg-emoji emoji-id=\"5438496463044752972\">⭐️</tg-emoji><b> Кнопка:</b> {esc(giveaway['button_text'])}\n"
         f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b> Победителей:</b> {giveaway['winners_count']}\n"
         f"<tg-emoji emoji-id=\"5447410659077661506\">🌐</tg-emoji><b> Итоги:</b> {giveaway['draw_datetime']} (МСК)\n\n"
         "<b>Публикуем?</b>",
@@ -256,7 +257,6 @@ async def new_lot_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await db.update_giveaway(giveaway_id, status="published", message_id=giveaway["source_message_id"])
     await state.clear()
     await callback.message.edit_text(
-     
         f"<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji><b>Кнопка прикреплена к посту в канале «{esc(giveaway['channel_title'])}»!</b>",
         parse_mode="HTML",
     )
