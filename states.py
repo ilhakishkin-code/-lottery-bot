@@ -2,8 +2,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class NewLotStates(StatesGroup):
-    waiting_forward = State()           # ждём пересланное сообщение из канала
-    waiting_post = State()              # ждём текст/картинку поста розыгрыша
+    waiting_forward = State()           # ждём пересланный опубликованный пост из канала
     waiting_button_text_custom = State()  # если выбрали "свой вариант" текста кнопки
     waiting_winners_count = State()     # ждём число победителей
     waiting_datetime = State()          # ждём дату и время подведения итогов
