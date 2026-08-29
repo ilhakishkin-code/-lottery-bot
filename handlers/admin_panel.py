@@ -168,8 +168,11 @@ async def gv_pick_finish(message: Message, state: FSMContext, bot: Bot):
     contact = prize_contact(message.from_user.username)
 
     win_text = (
-        f"🎉 Поздравляем! Вы выиграли в розыгрыше в канале «{esc(giveaway['channel_title'])}»!\n\n"
-        f"Чтобы получить приз, напишите: {contact}"
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b>Поздравляем с победой, вы выиграли PlayStation 5!</b>\n"
+        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 1-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду, просто напишите менеджеру GGSel: @ggsellevents</b>\n"
+        f"<tg-emoji emoji-id=\"5296369303661067030\">🔒</tg-emoji><b>Обязательно укажите номер вашего билета: #7301.</b>\n"
+        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
     )
 
     try:
