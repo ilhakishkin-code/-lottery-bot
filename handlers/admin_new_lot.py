@@ -1,11 +1,11 @@
 import re
- 
+
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, MessageOriginChannel
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
- 
+
 import database as db
 from states import NewLotStates
 from config import BUTTON_TEXT_PRESETS
@@ -15,15 +15,15 @@ from keyboards import (
     giveaway_post_kb,
 )
 from utils import parse_msk_datetime, esc
- 
+
 router = Router(name="new_lot")
- 
- 
+
+
 def _strip_tg_emoji(text: str) -> str:
     """Убирает теги <tg-emoji ...>...</tg-emoji>, оставляя эмодзи-заглушку внутри."""
     return re.sub(r"</?tg-emoji[^>]*>", "", text)
- 
- 
+
+
 async def safe_send(send_coro_factory, text: str, **kwargs):
     """
     Пытается отправить/отредактировать сообщение с <tg-emoji>.
@@ -38,8 +38,8 @@ async def safe_send(send_coro_factory, text: str, **kwargs):
         if "tg-emoji" in text and ("CUSTOM_EMOJI" in str(e).upper() or "PREMIUM" in str(e).upper() or "EMOJI" in str(e).upper()):
             return await send_coro_factory(_strip_tg_emoji(text), **kwargs)
         raise
- 
- 
+
+
 def _get_forward_info(message: Message):
     """
     Достаём (канал, id оригинального сообщения) из пересланного поста.
@@ -52,8 +52,8 @@ def _get_forward_info(message: Message):
     if message.forward_from_chat is not None:
         return message.forward_from_chat, message.forward_from_message_id
     return None, None
- 
- 
+
+
 @router.message(Command("new_lot"))
 async def new_lot_start(message: Message, state: FSMContext):
     await state.clear()
@@ -73,8 +73,8 @@ async def new_lot_start(message: Message, state: FSMContext):
         "</blockquote>",
         parse_mode="HTML",
     )
- 
- 
+
+
 @router.message(NewLotStates.waiting_forward, F.forward_origin | F.forward_from_chat)
 async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     chat, source_message_id = _get_forward_info(message)
@@ -88,7 +88,7 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
             parse_mode="HTML",
         )
         return
- 
+
     # Боту нужно право РЕДАКТИРОВАТЬ сообщения других — именно этим правом
     # мы потом прикрепим кнопку к вашему посту, не публикуя ничего от своего имени.
     try:
@@ -104,7 +104,7 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
             parse_mode="HTML",
         )
         return
- 
+
     can_edit = getattr(member, "can_edit_messages", False)
     if member.status not in ("administrator", "creator") or not can_edit:
         await safe_send(
@@ -117,11 +117,11 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
             parse_mode="HTML",
         )
         return
- 
+
     await db.upsert_channel(chat.id, chat.title or str(chat.id), message.from_user.id)
     giveaway_id = await db.create_giveaway_draft(message.from_user.id, chat.id, chat.title or str(chat.id))
     await db.update_giveaway(giveaway_id, source_chat_id=chat.id, source_message_id=source_message_id)
- 
+
     await state.update_data(giveaway_id=giveaway_id)
     await state.set_state(None)
     await safe_send(
@@ -134,8 +134,8 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
         reply_markup=button_text_choice_kb(),
         parse_mode="HTML",
     )
- 
- 
+
+
 @router.message(NewLotStates.waiting_forward)
 async def new_lot_waiting_forward_fallback(message: Message):
     await safe_send(
@@ -144,8 +144,8 @@ async def new_lot_waiting_forward_fallback(message: Message):
         "<b>Жду пересланное сообщение из канала, а не обычный текст.</b>",
         parse_mode="HTML",
     )
- 
- 
+
+
 @router.callback_query(F.data.startswith("btntext:"))
 async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext):
     choice = callback.data.split(":", 1)[1]
@@ -158,7 +158,7 @@ async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext)
         )
         await callback.answer()
         return
- 
+
     text = BUTTON_TEXT_PRESETS[int(choice)]
     data = await state.get_data()
     await db.update_giveaway(data["giveaway_id"], button_text=text)
@@ -172,8 +172,8 @@ async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext)
         parse_mode="HTML",
     )
     await callback.answer()
- 
- 
+
+
 @router.message(NewLotStates.waiting_button_text_custom, F.text)
 async def new_lot_button_text_custom(message: Message, state: FSMContext):
     text = message.text.strip()
@@ -188,8 +188,8 @@ async def new_lot_button_text_custom(message: Message, state: FSMContext):
         "</blockquote>",
         parse_mode="HTML",
     )
- 
- 
+
+
 @router.message(NewLotStates.waiting_winners_count, F.text)
 async def new_lot_winners_count(message: Message, state: FSMContext):
     raw = message.text.strip()
@@ -200,7 +200,7 @@ async def new_lot_winners_count(message: Message, state: FSMContext):
             parse_mode="HTML",
         )
         return
- 
+
     data = await state.get_data()
     await db.update_giveaway(data["giveaway_id"], winners_count=int(raw))
     await state.set_state(NewLotStates.waiting_datetime)
@@ -214,8 +214,8 @@ async def new_lot_winners_count(message: Message, state: FSMContext):
         "</blockquote>",
         parse_mode="HTML",
     )
- 
- 
+
+
 @router.message(NewLotStates.waiting_datetime, F.text)
 async def new_lot_datetime(message: Message, state: FSMContext):
     try:
@@ -231,13 +231,13 @@ async def new_lot_datetime(message: Message, state: FSMContext):
             parse_mode="HTML",
         )
         return
- 
+
     data = await state.get_data()
     giveaway_id = data["giveaway_id"]
     await db.update_giveaway(giveaway_id, draw_datetime=dt_msk.strftime("%d.%m.%Y %H:%M"))
- 
+
     # Обязательная подписка на каналы — пока не реализуем (по договорённости), просто пропускаем.
- 
+
     giveaway = await db.get_giveaway(giveaway_id)
     await state.set_state(NewLotStates.confirm)
     await safe_send(
@@ -251,8 +251,8 @@ async def new_lot_datetime(message: Message, state: FSMContext):
         reply_markup=confirm_publish_kb(giveaway_id),
         parse_mode="HTML",
     )
- 
- 
+
+
 @router.callback_query(F.data.startswith("cancel_draft:"))
 async def new_lot_cancel(callback: CallbackQuery, state: FSMContext):
     giveaway_id = int(callback.data.split(":")[1])
@@ -260,8 +260,8 @@ async def new_lot_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("Черновик отменён.")
     await callback.answer()
- 
- 
+
+
 @router.callback_query(F.data.startswith("publish:"))
 async def new_lot_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     giveaway_id = int(callback.data.split(":")[1])
@@ -269,10 +269,10 @@ async def new_lot_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if not giveaway:
         await callback.answer("Розыгрыш не найден", show_alert=True)
         return
- 
+
     me = await bot.get_me()
     kb = giveaway_post_kb(me.username, giveaway_id, giveaway["button_text"])
- 
+
     # Прикрепляем кнопку к УЖЕ ОПУБЛИКОВАННОМУ вами посту, не пересылая и не
     # переотправляя его содержимое — поэтому анимированные эмодзи и любое
     # форматирование остаются ровно такими, какими вы их опубликовали сами.
@@ -289,7 +289,7 @@ async def new_lot_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
             show_alert=True,
         )
         return
- 
+
     await db.update_giveaway(giveaway_id, status="published", message_id=giveaway["source_message_id"])
     await state.clear()
     await safe_send(
@@ -298,4 +298,3 @@ async def new_lot_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
         parse_mode="HTML",
     )
     await callback.answer()
- 
