@@ -1,7 +1,7 @@
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 
 import database as db
@@ -114,14 +114,21 @@ async def gv_participants(callback: CallbackQuery):
         await callback.answer("Пока никто не участвует", show_alert=True)
         return
 
-    lines = [f"👥 Участники розыгрыша #{giveaway_id} — {esc(giveaway['channel_title'])} ({len(participants)}):\n"]
-    for p in participants[:100]:
+    # Список отправляем ФАЙЛОМ, а не сообщением — у Telegram жёсткий лимит
+    # на длину сообщения (~4096 символов), и список участников легко его
+    # превышает уже на сотне человек. Файл снимает это ограничение полностью.
+    lines = [f"Участники розыгрыша #{giveaway_id} — {giveaway['channel_title']} ({len(participants)}):", ""]
+    for p in participants:
         uname = f"@{p['username']}" if p["username"] else "(без username)"
-        lines.append(f"• {uname} — id {p['user_id']}")
-    if len(participants) > 100:
-        lines.append(f"\n…и ещё {len(participants) - 100} участник(ов)")
+        lines.append(f"{uname} — id {p['user_id']}")
 
-    await callback.message.answer("\n".join(lines))
+    file_content = "\n".join(lines).encode("utf-8")
+    document = BufferedInputFile(file_content, filename=f"participants_giveaway_{giveaway_id}.txt")
+
+    await callback.message.answer_document(
+        document=document,
+        caption=f"👥 Все участники розыгрыша #{giveaway_id} — {esc(giveaway['channel_title'])} ({len(participants)})",
+    )
     await callback.answer()
 
 
