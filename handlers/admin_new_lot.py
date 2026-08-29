@@ -36,7 +36,8 @@ async def new_lot_start(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(NewLotStates.waiting_forward)
     await message.answer(
-        "⚙️ <b>Создание розыгрыша</b>\n\n"
+        "⚙️ <b>Создание розыгрыша:</b>\n\n"
+        "<blockquote>"
         "1. Добавьте бота в канал администратором с правом "
         "<b>«Редактировать сообщения других участников»</b>.\n"
         "2. Опубликуйте пост розыгрыша в канале <b>сами, как обычно</b> — со всем "
@@ -44,6 +45,7 @@ async def new_lot_start(message: Message, state: FSMContext):
         "Бот не будет ничего пересобирать, поэтому всё сохранится как есть.\n"
         "3. Перешлите сюда этот уже опубликованный пост — бот прикрепит к нему "
         "кнопку «Участвовать», не трогая сам текст.",
+        "<blockquote>"
         parse_mode="HTML",
     )
 
@@ -53,8 +55,8 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     chat, source_message_id = _get_forward_info(message)
     if chat is None or chat.type != "channel" or source_message_id is None:
         await message.answer(
-            "Это должен быть пересланный ОПУБЛИКОВАННЫЙ пост из канала. "
-            "Сначала опубликуйте пост в канале, затем перешлите его сюда."
+            "<b>Это должен быть пересланный ОПУБЛИКОВАННЫЙ пост из канала.</b>"
+            "<b>Сначала опубликуйте пост в канале, затем перешлите его сюда.</b>"
         )
         return
 
@@ -72,7 +74,7 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     can_edit = getattr(member, "can_edit_messages", False)
     if member.status not in ("administrator", "creator") or not can_edit:
         await message.answer(
-            "Боту нужны права администратора канала с возможностью "
+            "<b>Боту нужны права администратора канала с возможностью</b> "
             "<b>«Редактировать сообщения других участников»</b>. "
             "Выдайте это право и перешлите пост снова.",
             parse_mode="HTML",
@@ -86,7 +88,10 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(giveaway_id=giveaway_id)
     await state.set_state(None)
     await message.answer(
-        "Пост получен ✅\n\nВыберите готовый вариант текста кнопки или напишите свой:",
+        "<b>Пост получен!\n\n</b>"
+        "<blockquote>"
+        "Выберите готовый вариант текста кнопки или напишите свой:"
+        "</blockquote>",
         reply_markup=button_text_choice_kb(),
     )
 
@@ -112,7 +117,10 @@ async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext)
     await db.update_giveaway(data["giveaway_id"], button_text=text)
     await state.set_state(NewLotStates.waiting_winners_count)
     await callback.message.edit_text(
-        f"Текст кнопки: «{esc(text)}»\n\nВведите количество победителей (число от 1 до 100):"
+        f"<b>Текст кнопки: «{esc(text)}»</b>\n\n"
+        "<blockquote>"
+        "Введите количество победителей (число от 1 до 100):"
+        "</blockquote>"
     )
     await callback.answer()
 
@@ -123,7 +131,8 @@ async def new_lot_button_text_custom(message: Message, state: FSMContext):
     data = await state.get_data()
     await db.update_giveaway(data["giveaway_id"], button_text=text)
     await state.set_state(NewLotStates.waiting_winners_count)
-    await message.answer(f"Текст кнопки: «{esc(text)}»\n\nВведите количество победителей (число от 1 до 100):")
+    await message.answer(f"<b>Текст кнопки: «{esc(text)}»</b>\n\n"
+                         "Введите количество победителей (число от 1 до 100):")
 
 
 @router.message(NewLotStates.waiting_winners_count, F.text)
@@ -137,10 +146,12 @@ async def new_lot_winners_count(message: Message, state: FSMContext):
     await db.update_giveaway(data["giveaway_id"], winners_count=int(raw))
     await state.set_state(NewLotStates.waiting_datetime)
     await message.answer(
-        "Дата и время итогов.\n"
+        "<blockquote>"
+        "<b>Дата и время итогов.</b>\n"
         "Формат: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n"
-        "Время — московское (МСК, UTC+3). Дата и время должны быть в будущем.\n\n"
-        "Например: 27.08.2026 15:30",
+        "Время — московское (МСК). Дата и время должны быть в будущем.\n\n"
+        "Например: 27.08.2026 15:30"
+        "</blockquote>",
         parse_mode="HTML",
     )
 
