@@ -36,7 +36,8 @@ async def new_lot_start(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(NewLotStates.waiting_forward)
     await message.answer(
-        "⚙️ <b>Создание розыгрыша:</b>\n\n"
+        "<tg-emoji emoji-id=\"5341715473882955310\">⚙️</tg-emoji>"
+        "<b>Создание розыгрыша:</b>\n\n"
         "<blockquote>"
         "1. Добавьте бота в канал администратором с правом "
         "<b>«Редактировать сообщения других участников»</b>.\n"
@@ -55,7 +56,7 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     chat, source_message_id = _get_forward_info(message)
     if chat is None or chat.type != "channel" or source_message_id is None:
         await message.answer(
-            "❗ <b>Это должен быть пересланный ОПУБЛИКОВАННЫЙ пост из канала.</b>\n\n"
+            "<b>Это должен быть пересланный ОПУБЛИКОВАННЫЙ пост из канала.</b>\n\n"
             "<blockquote>"
             "Сначала опубликуйте пост в канале, затем перешлите его сюда."
             "</blockquote>",
@@ -69,10 +70,10 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
         member = await bot.get_chat_member(chat.id, (await bot.get_me()).id)
     except (TelegramBadRequest, TelegramForbiddenError):
         await message.answer(
-            "❗ <b>Не вижу бота в этом канале.</b>\n\n"
+            "<b>Не вижу бота в этом канале.</b>\n\n"
             "<blockquote>"
-            "Добавьте бота администратором с правом «Редактировать сообщения "
-            "других участников» и перешлите пост ещё раз."
+            "<b>Не вижу бота в этом канале. Добавьте бота в канал администратором</b>"
+            "<b>с правом редактировать сообщения и перешлите сообщение ещё раз.</b>"
             "</blockquote>",
             parse_mode="HTML",
         )
@@ -81,7 +82,7 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     can_edit = getattr(member, "can_edit_messages", False)
     if member.status not in ("administrator", "creator") or not can_edit:
         await message.answer(
-            "❗ <b>Боту нужны права администратора канала.</b>\n\n"
+            "<b>Боту нужны права администратора канала.</b>\n\n"
             "<blockquote>"
             "Выдайте право «Редактировать сообщения других участников» "
             "и перешлите пост снова."
@@ -97,7 +98,8 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(giveaway_id=giveaway_id)
     await state.set_state(None)
     await message.answer(
-        "✅ <b>Пост получен!</b>\n\n"
+        "<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji> "
+        "<b>Пост получен!</b>\n\n"
         "<blockquote>"
         "Выберите готовый вариант текста кнопки или напишите свой:"
         "</blockquote>",
@@ -109,10 +111,7 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
 @router.message(NewLotStates.waiting_forward)
 async def new_lot_waiting_forward_fallback(message: Message):
     await message.answer(
-        "👀 <b>Жду пересланный ОПУБЛИКОВАННЫЙ пост из канала</b>\n\n"
-        "<blockquote>"
-        "а не обычное сообщение."
-        "</blockquote>",
+        "<tg-emoji emoji-id=\"5210956306952758910\">👀</tg-emoji><b>Жду пересланное сообщение из канала, а не обычный текст.</b>"),
         parse_mode="HTML",
     )
  
@@ -123,7 +122,7 @@ async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext)
     if choice == "custom":
         await state.set_state(NewLotStates.waiting_button_text_custom)
         await callback.message.edit_text(
-            "✍️ <b>Напишите текст, который будет на кнопке:</b>",
+            "<tg-emoji emoji-id=\"5210956306952758910\">👀</tg-emoji><b>Напишите текст, который будет на кнопке:</b>",
             parse_mode="HTML",
         )
         await callback.answer()
@@ -150,7 +149,7 @@ async def new_lot_button_text_custom(message: Message, state: FSMContext):
     await db.update_giveaway(data["giveaway_id"], button_text=text)
     await state.set_state(NewLotStates.waiting_winners_count)
     await message.answer(
-        f"<b>Текст кнопки: «{esc(text)}»</b>\n\n"
+        f"<tg-emoji emoji-id=\"5210956306952758910\">👀</tg-emoji><b>Текст кнопки: «{esc(text)}»</b>\n\n"
         "<blockquote>"
         "Введите количество победителей (число от 1 до 100):"
         "</blockquote>",
@@ -163,7 +162,7 @@ async def new_lot_winners_count(message: Message, state: FSMContext):
     raw = message.text.strip()
     if not raw.isdigit() or not (1 <= int(raw) <= 100):
         await message.answer(
-            "❗ <b>Введите целое число от 1 до 100.</b>",
+            "<tg-emoji emoji-id=\"5210956306952758910\">👀</tg-emoji><b>Введите целое число от 1 до 100.</b>",
             parse_mode="HTML",
         )
         return
@@ -172,10 +171,10 @@ async def new_lot_winners_count(message: Message, state: FSMContext):
     await db.update_giveaway(data["giveaway_id"], winners_count=int(raw))
     await state.set_state(NewLotStates.waiting_datetime)
     await message.answer(
-        "🔔 <b>Дата и время итогов:</b>\n\n"
+        "<tg-emoji emoji-id=\"5458603043203327669\">🔔</tg-emoji> <b>Дата и время итогов:</b>\n"
         "<blockquote>"
         "Формат: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n"
-        "Время — московское (МСК). Дата и время должны быть в будущем.\n\n"
+        "Время — московское (МСК, UTC+3). Дата и время должны быть в будущем.\n\n"
         "Например: 27.08.2026 15:30"
         "</blockquote>",
         parse_mode="HTML",
@@ -188,7 +187,7 @@ async def new_lot_datetime(message: Message, state: FSMContext):
         dt_msk = parse_msk_datetime(message.text)
     except ValueError:
         await message.answer(
-            "❗ <b>Не получилось разобрать дату.</b>\n\n"
+            "<b>Не получилось разобрать дату.</b>\n\n"
             "<blockquote>"
             "Проверьте формат <code>ДД.ММ.ГГГГ ЧЧ:ММ</code> "
             "и что дата в будущем."
@@ -207,13 +206,11 @@ async def new_lot_datetime(message: Message, state: FSMContext):
     await state.set_state(NewLotStates.confirm)
     await message.answer(
         "<b>Проверьте розыгрыш перед публикацией:</b>\n\n"
-        "<blockquote>"
-        f"📢 Канал: {esc(giveaway['channel_title'])}\n"
-        f"🔘 Кнопка: {esc(giveaway['button_text'])}\n"
-        f"🏆 Победителей: {giveaway['winners_count']}\n"
-        f"🕒 Итоги: {giveaway['draw_datetime']} (МСК)"
-        "</blockquote>\n\n"
-        "Публикуем?",
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b> Канал:</b> {html.escape(giveaway['channel_title'])}\n"
+        f"<tg-emoji emoji-id=\"5438496463044752972\">⭐️</tg-emoji><b> Кнопка:</b> {html.escape(giveaway['button_text'])}\n"
+        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b> Победителей:</b> {giveaway['winners_count']}\n"
+        f"<tg-emoji emoji-id=\"5447410659077661506\">🌐</tg-emoji><b> Итоги:</b> {giveaway['draw_datetime']} (МСК)\n\n"
+        "<b>Публикуем?</b>",
         reply_markup=confirm_publish_kb(giveaway_id),
         parse_mode="HTML",
     )
@@ -259,7 +256,8 @@ async def new_lot_publish(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await db.update_giveaway(giveaway_id, status="published", message_id=giveaway["source_message_id"])
     await state.clear()
     await callback.message.edit_text(
-        f"✅ <b>Кнопка прикреплена к посту в канале «{esc(giveaway['channel_title'])}»!</b>",
+     
+        f"<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji><b>Кнопка прикреплена к посту в канале «{esc(giveaway['channel_title'])}»!</b>",
         parse_mode="HTML",
     )
     await callback.answer()
