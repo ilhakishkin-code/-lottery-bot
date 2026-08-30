@@ -225,8 +225,8 @@ async def gv_remind(callback: CallbackQuery, bot: Bot):
     contact = prize_contact(admin_username)
 
     reminder_text = (
-        f"⏰ Напоминаем: у вас остаётся мало времени, чтобы забрать приз "
-        f"в розыгрыше «{esc(giveaway['channel_title'])}»!\n\nСвяжитесь с {contact} как можно скорее."
+        f"<b>Напоминаем: у вас осталось мало времени, чтобы забрать приз "
+        f"в розыгрыше «{giveaway['channel_title']}», иначе ваш приз сгорит!\n\nСвяжитесь с @ggsellevents как можно скорее!</b>"
     )
 
     try:
