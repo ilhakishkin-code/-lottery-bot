@@ -15,7 +15,7 @@ def button_text_choice_kb() -> InlineKeyboardMarkup:
 
 def confirm_publish_kb(giveaway_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="✅ Опубликовать в канал", callback_data=f"publish:{giveaway_id}")
+    b.button(text="✅ Прислать превью с кнопкой", callback_data=f"publish:{giveaway_id}")
     b.button(text="❌ Отменить", callback_data=f"cancel_draft:{giveaway_id}")
     b.adjust(1)
     return b.as_markup()

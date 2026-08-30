@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS giveaways (
     button_text TEXT,
     winners_count INTEGER,
     draw_datetime TEXT,      -- строка "ДД.ММ.ГГГГ ЧЧ:ММ" по МСК, как ввёл админ
-    status TEXT DEFAULT 'draft',   -- draft | published | finished
+    status TEXT DEFAULT 'draft',   -- draft | awaiting_channel_post | published | finished
     message_id INTEGER,
     created_at TEXT
 );
@@ -79,7 +79,11 @@ async def init_db():
         # source_chat_id/source_message_id хранят, ГДЕ лежит оригинальное сообщение
         # с постом (в личке админа с ботом) — чтобы публиковать его через copyMessage
         # и сохранить всё форматирование и кастомные эмодзи как есть.
-        for column, coltype in [("source_chat_id", "INTEGER"), ("source_message_id", "INTEGER")]:
+        for column, coltype in [
+            ("source_chat_id", "INTEGER"),
+            ("source_message_id", "INTEGER"),
+            ("awaiting_since", "TEXT"),  # когда розыгрыш перешёл в статус "ждём пересылку в канал"
+        ]:
             try:
                 await db.execute(f"ALTER TABLE giveaways ADD COLUMN {column} {coltype}")
             except aiosqlite.OperationalError:
@@ -145,6 +149,23 @@ async def get_giveaway(giveaway_id: int) -> Optional[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT * FROM giveaways WHERE id = ?", (giveaway_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def get_awaiting_giveaway_for_channel(channel_id: int) -> Optional[dict]:
+    """
+    Ищет розыгрыш в статусе 'awaiting_channel_post' для этого канала — то есть тот,
+    для которого создатель уже прошёл мастер и вот-вот перешлёт готовый пост в канал.
+    Берём самый свежий, если их вдруг несколько (на практике такое не должно случаться).
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM giveaways WHERE channel_id = ? AND status = 'awaiting_channel_post' "
+            "ORDER BY id DESC LIMIT 1",
+            (channel_id,),
+        )
         row = await cur.fetchone()
         return dict(row) if row else None
 
