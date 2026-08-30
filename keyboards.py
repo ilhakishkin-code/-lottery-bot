@@ -43,6 +43,7 @@ def giveaway_detail_kb(giveaway_id: int, status: str) -> InlineKeyboardMarkup:
     if status == "draft":
         b.button(text="✅ Опубликовать", callback_data=f"publish:{giveaway_id}")
     b.button(text="👥 Участники", callback_data=f"gv_participants:{giveaway_id}")
+    b.button(text="📣 Напомнить всем об итогах", callback_data=f"gv_notify_all:{giveaway_id}")
     b.button(text="🏆 Выбрать победителя", callback_data=f"gv_pick:{giveaway_id}")
     b.button(text="🔔 Победители и напоминания", callback_data=f"gv_winners:{giveaway_id}")
     b.button(text="⬅️ К списку розыгрышей", callback_data="gv_back")
@@ -64,5 +65,21 @@ def reset_confirm_kb() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="⚠️ Да, удалить всё", callback_data="reset_confirm")
     b.button(text="Отмена", callback_data="reset_cancel")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def end_lot_list_kb(giveaways: list[dict]) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for g in giveaways:
+        b.button(text=f"#{g['id']} — {g['channel_title']}", callback_data=f"end_lot:{g['id']}")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def end_lot_confirm_kb(giveaway_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="⚠️ Да, завершить досрочно", callback_data=f"end_lot_yes:{giveaway_id}")
+    b.button(text="Отмена", callback_data=f"end_lot_no:{giveaway_id}")
     b.adjust(1)
     return b.as_markup()

@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -11,6 +13,14 @@ from keyboards import giveaways_list_kb, giveaway_detail_kb, winners_list_kb, re
 from utils import esc
 
 router = Router(name="admin_panel")
+
+# Весь этот роутер — приватная админ-панель. Помимо проверки is_admin внутри
+# каждого хендлера, дополнительно блокируем срабатывание где-либо, кроме личных
+# сообщений с ботом: если админ случайно наберёт /giveaways или /stats в группе
+# или в обсуждении при канале, бот там вообще не ответит — ответ со списком
+# участников не должен даже теоретически попасть в чат, где его видят посторонние.
+router.message.filter(F.chat.type == "private")
+router.callback_query.filter(F.message.chat.type == "private")
 
 
 def is_admin(user_id: int) -> bool:
@@ -132,6 +142,60 @@ async def gv_participants(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("gv_notify_all:"))
+async def gv_notify_all(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    giveaway = await db.get_giveaway(giveaway_id)
+    if not giveaway:
+        await callback.answer("Розыгрыш не найден", show_alert=True)
+        return
+
+    participants = await db.list_participants(giveaway_id)
+    if not participants:
+        await callback.answer("Участников пока нет", show_alert=True)
+        return
+
+    await callback.answer(
+        f"Начинаю рассылку {len(participants)} участникам — это может занять время…",
+        show_alert=True,
+    )
+
+    text = (
+        f"⏰ Скоро подведём итоги розыгрыша в канале «{esc(giveaway['channel_title'])}»!\n\n"
+        "Включите уведомления у бота, чтобы не пропустить результат."
+    )
+
+    success = 0
+    failed = []
+    for p in participants:
+        try:
+            await bot.send_message(p["user_id"], text)
+            success += 1
+        except (TelegramForbiddenError, TelegramBadRequest):
+            failed.append(p)
+        await asyncio.sleep(0.05)  # не упереться в лимиты Telegram при массовой рассылке
+
+    summary_lines = [
+        f"📣 Рассылка по розыгрышу #{giveaway_id} — {esc(giveaway['channel_title'])} завершена.",
+        f"Всего участников: {len(participants)}",
+        f"✅ Доставлено: {success}",
+        f"❌ Не доставлено: {len(failed)}",
+    ]
+    await callback.message.answer("\n".join(summary_lines))
+
+    if failed:
+        fail_lines = [f"@{p['username']}" if p["username"] else str(p["user_id"]) for p in failed]
+        file_content = "\n".join(fail_lines).encode("utf-8")
+        document = BufferedInputFile(file_content, filename=f"failed_notify_giveaway_{giveaway_id}.txt")
+        await callback.message.answer_document(
+            document=document,
+            caption="Кому не удалось доставить (заблокировали бота или ещё не запускали его)",
+        )
+
+
 @router.callback_query(F.data.startswith("gv_pick:"))
 async def gv_pick_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -168,10 +232,8 @@ async def gv_pick_finish(message: Message, state: FSMContext, bot: Bot):
     contact = prize_contact(message.from_user.username)
 
     win_text = (
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b>Поздравляем с победой, вы выиграли PlayStation 5!</b>\n"
-        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 1-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
-        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду - напишите менеджеру GGSel: @ggsellevents</b>\n"
-        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
+        f"🎉 Поздравляем! Вы выиграли в розыгрыше в канале «{esc(giveaway['channel_title'])}»!\n\n"
+        f"Чтобы получить приз, напишите: {contact}"
     )
 
     try:
@@ -225,8 +287,8 @@ async def gv_remind(callback: CallbackQuery, bot: Bot):
     contact = prize_contact(admin_username)
 
     reminder_text = (
-        f"<b>Напоминаем: у вас осталось мало времени, чтобы забрать приз "
-        f"в розыгрыше «{giveaway['channel_title']}», иначе ваш приз сгорит!\n\nСвяжитесь с @ggsellevents как можно скорее!</b>"
+        f"⏰ Напоминаем: у вас остаётся мало времени, чтобы забрать приз "
+        f"в розыгрыше «{esc(giveaway['channel_title'])}»!\n\nСвяжитесь с {contact} как можно скорее."
     )
 
     try:

@@ -43,7 +43,7 @@ async def start_with_payload(message: Message, command: CommandObject):
     if is_new:
         await message.answer(
             f"🎉 Вы участвуете в розыгрыше в канале «{esc(giveaway['channel_title'])}»!\n\n"
-            f"Результаты придут сюда, в этот чат с ботом, когда организатор подведёт итоги."
+            f"Результаты придут сюда, в этот чат с ботом, после подведения итогов розыгрыша."
         )
     else:
         await message.answer("Вы уже участвуете в этом розыгрыше — заявка уже зарегистрирована ✅")
