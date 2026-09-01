@@ -30,7 +30,7 @@ async def start_with_payload(message: Message, command: CommandObject):
 
     giveaway = await db.get_giveaway(giveaway_id)
     if not giveaway or giveaway["status"] != "published":
-        await message.answer("Этот розыгрыш недоступен или уже завершён.")
+        await message.answer("<b>Этот розыгрыш недоступен или уже завершён.</b>")
         return
 
     is_new = await db.add_participant(
@@ -42,8 +42,10 @@ async def start_with_payload(message: Message, command: CommandObject):
 
     if is_new:
         await message.answer(
-            f"<b>Поздравляю, вы участвуете в розыгрыше в канале «{esc(giveaway['channel_title'])}»!</b>\n\n"
+            f"<b><tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> Вы участвуете в розыгрыше в канале «{esc(giveaway['channel_title'])}»!</b>\n"
+            "<blockquote>"
             f"<b>Результаты придут в бота, после подведения итогов розыгрыша.</b>"
+            "</blockquote>"
         )
     else:
         await message.answer("<b>Вы уже участвуете в этом розыгрыше — заявка зарегистрирована</b>.")
@@ -53,7 +55,7 @@ async def start_with_payload(message: Message, command: CommandObject):
 async def start_plain(message: Message):
     await db.upsert_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer(
-        "<b>Привет! Я бот для розыгрышей в Telegram-каналах от GGSel</b>.\n\n"
+        "<b>Привет! Я Pet, бот для розыгрышей в Telegram-каналах от GGSel</b>.\n\n"
         "<b>Если вы владелец канала и хотите провести розыгрыш — используйте команду /new_lot</b>.\n"
         "<b>Если вы попали сюда по кнопке «Участвовать» из канала — значит, всё сработало,</b> "
         "<b>просто дождитесь результатов</b>."
