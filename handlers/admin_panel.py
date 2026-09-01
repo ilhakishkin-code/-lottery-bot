@@ -164,10 +164,8 @@ async def gv_notify_all(callback: CallbackQuery, bot: Bot):
     )
 
     text = (
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b>Поздравляем с победой, вы выиграли PlayStation 5!</b>\n"
-        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 1-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
-        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду - напишите менеджеру GGSel: @ggsellevents</b>\n"
-        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
+        f"⏰ Скоро подведём итоги розыгрыша в канале «{esc(giveaway['channel_title'])}»!\n\n"
+        "Включите уведомления у бота, чтобы не пропустить результат."
     )
 
     success = 0

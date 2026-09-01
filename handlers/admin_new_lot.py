@@ -55,14 +55,11 @@ async def new_lot_start(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(NewLotStates.waiting_forward)
     await message.answer(
-        "<tg-emoji emoji-id=\"5341715473882955310\">⚙️</tg-emoji>"
-        "<b>Создание розыгрыша:</b>\n\n"
-        "<blockquote>"
+        "⚙️ <b>Создание розыгрыша</b>\n\n"
         "1. Добавьте бота в канал администратором с правом "
         "<b>«Редактировать сообщения других участников»</b>.\n"
         "2. Перешлите сюда любое сообщение из этого канала — так бот узнает, куда "
-        "потом публиковать розыгрыш.\n"
-        "</blockquote>",
+        "потом публиковать розыгрыш.",
         parse_mode="HTML",
     )
 
@@ -78,17 +75,17 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
         member = await bot.get_chat_member(chat.id, (await bot.get_me()).id)
     except (TelegramBadRequest, TelegramForbiddenError):
         await message.answer(
-            "<b>Не вижу бота в этом канале. Добавьте бота администратором с правом</b> "
-            "<b>«Редактировать сообщения других участников» и перешлите сообщение ещё раз.</b>"
+            "Не вижу бота в этом канале. Добавьте бота администратором с правом "
+            "«Редактировать сообщения других участников» и перешлите сообщение ещё раз."
         )
         return
 
     can_edit = getattr(member, "can_edit_messages", False)
     if member.status not in ("administrator", "creator") or not can_edit:
         await message.answer(
-            "<b>Боту нужны права администратора канала с возможностью</b> "
+            "Боту нужны права администратора канала с возможностью "
             "<b>«Редактировать сообщения других участников»</b>. "
-            "<b>Выдайте это право и перешлите сообщение снова.</b>",
+            "Выдайте это право и перешлите сообщение снова.",
             parse_mode="HTML",
         )
         return
@@ -98,19 +95,16 @@ async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
 
     await state.update_data(giveaway_id=giveaway_id)
     await state.set_state(NewLotStates.waiting_post)
-    await message.answer( 
-        "<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji> "
-        f"<b>Канал «{esc(chat.title)}» подключён!</b>\n\n"
-        "<blockquote>"
-        "Теперь пришлите сюда сам пост розыгрыша "
-        "</blockquote>"
-
+    await message.answer(
+        f"Канал «{esc(chat.title)}» подключён ✅\n\n"
+        "Теперь пришлите сюда сам пост розыгрыша — текст, фото, видео, гифку, что угодно, "
+        "с любым форматированием и анимированными эмодзи как есть."
     )
 
 
 @router.message(NewLotStates.waiting_forward)
 async def new_lot_waiting_forward_fallback(message: Message):
-    await message.answer("<b>Жду пересланное сообщение из канала, а не обычный текст.</b>")
+    await message.answer("Жду пересланное сообщение из канала, а не обычный текст.")
 
 
 @router.message(NewLotStates.waiting_post)
@@ -127,8 +121,7 @@ async def new_lot_got_post(message: Message, state: FSMContext):
     )
     await state.set_state(None)
     await message.answer(
-        "<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji> "
-        "<b>Пост получен \n\nВыберите готовый вариант текста кнопки или напишите свой:</b>",
+        "Пост получен ✅\n\nВыберите готовый вариант текста кнопки или напишите свой:",
         reply_markup=button_text_choice_kb(),
     )
 
@@ -138,7 +131,7 @@ async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext)
     choice = callback.data.split(":", 1)[1]
     if choice == "custom":
         await state.set_state(NewLotStates.waiting_button_text_custom)
-        await callback.message.edit_text("<b>Напишите текст, который будет на кнопке:</b>")
+        await callback.message.edit_text("Напишите текст, который будет на кнопке:")
         await callback.answer()
         return
 
@@ -147,7 +140,7 @@ async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext)
     await db.update_giveaway(data["giveaway_id"], button_text=text)
     await state.set_state(NewLotStates.waiting_winners_count)
     await callback.message.edit_text(
-        f"<b>Текст кнопки: «{esc(text)}»\n\nВведите количество победителей (число от 1 до 100):</b>"
+        f"Текст кнопки: «{esc(text)}»\n\nВведите количество победителей (число от 1 до 100):"
     )
     await callback.answer()
 
@@ -199,12 +192,12 @@ async def new_lot_datetime(message: Message, state: FSMContext):
     giveaway = await db.get_giveaway(giveaway_id)
     await state.set_state(NewLotStates.confirm)
     await message.answer(
-        "<b>Проверьте розыгрыш перед публикацией:</b>\n\n"
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b> Канал:</b> {esc(giveaway['channel_title'])}\n"
-        f"<tg-emoji emoji-id=\"5438496463044752972\">⭐️</tg-emoji><b> Кнопка:</b> {esc(giveaway['button_text'])}\n"
-        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b> Победителей:</b> {giveaway['winners_count']}\n"
-        f"<tg-emoji emoji-id=\"5447410659077661506\">🌐</tg-emoji><b> Итоги:</b> {giveaway['draw_datetime']} (МСК)\n\n"
-        "<b>Готовы получить финальное сообщение с кнопкой?</b>",
+        "Проверьте розыгрыш перед отправкой превью:\n\n"
+        f"📢 Канал: {esc(giveaway['channel_title'])}\n"
+        f"🔘 Кнопка: {esc(giveaway['button_text'])}\n"
+        f"🏆 Победителей: {giveaway['winners_count']}\n"
+        f"🕒 Итоги: {giveaway['draw_datetime']} (МСК)\n\n"
+        "Готовы получить финальное сообщение с кнопкой?",
         reply_markup=confirm_publish_kb(giveaway_id),
     )
 
@@ -274,7 +267,7 @@ async def on_channel_post(message: Message, bot: Bot):
         try:
             await bot.send_message(
                 giveaway["owner_id"],
-                f"<b>Кнопка автоматически прикреплена к посту в канале «{esc(giveaway['channel_title'])}»!</b>",
+                f"✅ Кнопка автоматически прикреплена к посту в канале «{esc(giveaway['channel_title'])}»!",
             )
         except (TelegramForbiddenError, TelegramBadRequest):
             pass
