@@ -1,369 +1,334 @@
-from datetime import datetime, timezone
-
+import asyncio
+ 
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, MessageOriginChannel
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-
+from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
+ 
 import database as db
-from states import NewLotStates
-from config import BUTTON_TEXT_PRESETS
-from keyboards import (
-    button_text_choice_kb,
-    confirm_publish_kb,
-    giveaway_post_kb,
-    end_lot_list_kb,
-    end_lot_confirm_kb,
-)
-from utils import parse_msk_datetime, esc
-
-router = Router(name="new_lot")
-
-# Настройка розыгрыша (весь мастер /new_lot и /end_lot) — только в личке с ботом.
+from states import WinnerFlowStates
+from config import ADMIN_IDS, PRIZE_CONTACT_USERNAME
+from keyboards import giveaways_list_kb, giveaway_detail_kb, winners_list_kb, reset_confirm_kb
+from utils import esc
+ 
+router = Router(name="admin_panel")
+ 
+# Весь этот роутер — приватная админ-панель. Помимо проверки is_admin внутри
+# каждого хендлера, дополнительно блокируем срабатывание где-либо, кроме личных
+# сообщений с ботом: если админ случайно наберёт /giveaways или /stats в группе
+# или в обсуждении при канале, бот там вообще не ответит — ответ со списком
+# участников не должен даже теоретически попасть в чат, где его видят посторонние.
 router.message.filter(F.chat.type == "private")
 router.callback_query.filter(F.message.chat.type == "private")
-
-
-def _get_forward_info(message: Message):
+ 
+ 
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
+ 
+ 
+def prize_contact(fallback_username: str | None) -> str:
     """
-    Достаём (канал, id оригинального сообщения) из пересланного поста.
-    Bot API 7.0+ отдаёт это через message.forward_origin (MessageOriginChannel),
-    старые поля forward_from_chat/forward_from_message_id — запасной вариант.
+    Кого показать победителю как контакт за призом.
+    Если в конфиге задан PRIZE_CONTACT_USERNAME — используем его всегда,
+    независимо от того, кто из админов выбрал победителя.
+    Иначе — берём username того админа, который сейчас нажал кнопку.
     """
-    if isinstance(message.forward_origin, MessageOriginChannel):
-        return message.forward_origin.chat, message.forward_origin.message_id
-    if message.forward_from_chat is not None:
-        return message.forward_from_chat, message.forward_from_message_id
-    return None, None
-
-
-async def _attach_button(bot: Bot, giveaway: dict, chat_id: int, message_id: int) -> bool:
-    """Прикрепляет кнопку «Участвовать» к посту в канале. Возвращает True при успехе."""
-    me = await bot.get_me()
-    kb = giveaway_post_kb(me.username, giveaway["id"], giveaway["button_text"])
-    try:
-        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=kb)
-    except (TelegramBadRequest, TelegramForbiddenError):
-        return False
-    await db.update_giveaway(giveaway["id"], status="published", source_message_id=message_id)
-    return True
-
-
-@router.message(Command("new_lot"))
-async def new_lot_start(message: Message, state: FSMContext):
-    await state.clear()
-    await state.set_state(NewLotStates.waiting_forward)
-    await message.answer(
-        "<tg-emoji emoji-id=\"5341715473882955310\">⚙️</tg-emoji>"
-        "<b>Создание розыгрыша:</b>\n\n"
-        "<blockquote>"
-        "1. Добавьте бота в канал администратором с правом "
-        "<b>«Редактировать сообщения других участников»</b>.\n"
-        "2. Перешлите сюда любое сообщение из этого канала — так бот узнает, куда "
-        "потом публиковать розыгрыш.",
-        "</blockquote>"
-        parse_mode="HTML",
-    )
-
-
-@router.message(NewLotStates.waiting_forward, F.forward_origin | F.forward_from_chat)
-async def new_lot_got_forward(message: Message, state: FSMContext, bot: Bot):
-    chat, _ = _get_forward_info(message)
-    if chat is None or chat.type != "channel":
-        await message.answer("Это сообщение не из канала. Перешлите сообщение именно из канала.")
+    if PRIZE_CONTACT_USERNAME:
+        return f"@{PRIZE_CONTACT_USERNAME}"
+    if fallback_username:
+        return f"@{fallback_username}"
+    return "организатору розыгрыша"
+ 
+ 
+# Все хендлеры этого роутера — приватная админ-панель. Владельцы каналов,
+# создавшие розыгрыш через /new_lot, доступа сюда не имеют: проверка ниже
+# стоит первой строкой в каждом хендлере. На команды посторонних отвечаем
+# молча (ничего не отправляем) — это специально, чтобы не выдавать даже
+# сам факт существования админ-функций.
+ 
+@router.message(Command("giveaways"))
+async def all_giveaways(message: Message):
+    if not is_admin(message.from_user.id):
         return
-
-    try:
-        member = await bot.get_chat_member(chat.id, (await bot.get_me()).id)
-    except (TelegramBadRequest, TelegramForbiddenError):
-        await message.answer(
-            "<b>Не вижу бота в этом канале. Добавьте бота администратором с правом</b> "
-            "<b>«Редактировать сообщения других участников» и перешлите сообщение ещё раз.</b>"
-        )
+    giveaways = await db.list_all_giveaways()
+    if not giveaways:
+        await message.answer("Розыгрышей пока нет.")
         return
-
-    can_edit = getattr(member, "can_edit_messages", False)
-    if member.status not in ("administrator", "creator") or not can_edit:
-        await message.answer(
-            "<b>Боту нужны права администратора канала с возможностью</b> "
-            "<b>«Редактировать сообщения других участников»</b>. "
-            "<b>Выдайте это право и перешлите сообщение снова.</b>",
-            parse_mode="HTML",
-        )
+    await message.answer("Все розыгрыши (по всем каналам):", reply_markup=giveaways_list_kb(giveaways))
+ 
+ 
+@router.message(Command("stats"))
+async def channel_stats(message: Message):
+    """Сводка по всем каналам сразу: сколько людей нажали 'Участвовать' в каждом."""
+    if not is_admin(message.from_user.id):
         return
-
-    await db.upsert_channel(chat.id, chat.title or str(chat.id), message.from_user.id)
-    giveaway_id = await db.create_giveaway_draft(message.from_user.id, chat.id, chat.title or str(chat.id))
-
-    await state.update_data(giveaway_id=giveaway_id)
-    await state.set_state(NewLotStates.waiting_post)
-    await message.answer( 
-        "<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji> "
-        f"<b>Канал «{esc(chat.title)}» подключён!</b>\n\n"
-        "<blockquote>"
-        "Теперь пришлите сюда сам пост розыгрыша "
-        "</blockquote>"
-
-    )
-
-
-@router.message(NewLotStates.waiting_forward)
-async def new_lot_waiting_forward_fallback(message: Message):
-    await message.answer("<b>Жду пересланное сообщение из канала, а не обычный текст.</b>")
-
-
-@router.message(NewLotStates.waiting_post)
-async def new_lot_got_post(message: Message, state: FSMContext):
-    """
-    Принимаем ЛЮБОЙ тип сообщения как пост. Запоминаем, ГДЕ лежит оригинал
-    (в личке с ботом) — позже соберём из него финальное превью с кнопкой.
-    """
-    data = await state.get_data()
-    await db.update_giveaway(
-        data["giveaway_id"],
-        source_chat_id=message.chat.id,
-        source_message_id=message.message_id,
-    )
-    await state.set_state(None)
-    await message.answer(
-        "<tg-emoji emoji-id=\"5206607081334906820\">✔️</tg-emoji> "
-        "<b>Пост получен \n\nВыберите готовый вариант текста кнопки или напишите свой:</b>",
-        reply_markup=button_text_choice_kb(),
-    )
-
-
-@router.callback_query(F.data.startswith("btntext:"))
-async def new_lot_button_text_choice(callback: CallbackQuery, state: FSMContext):
-    choice = callback.data.split(":", 1)[1]
-    if choice == "custom":
-        await state.set_state(NewLotStates.waiting_button_text_custom)
-        await callback.message.edit_text("<b>Напишите текст, который будет на кнопке:</b>")
+    rows = await db.channel_stats_all()
+    if not rows:
+        await message.answer("Пока нет данных.")
+        return
+ 
+    lines = ["📊 <b>Статистика по каналам</b>\n"]
+    for r in rows:
+        lines.append(f"• {esc(r['channel_title'])} — {r['participants']} участник(ов)")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+ 
+ 
+@router.callback_query(F.data == "gv_back")
+async def gv_back(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
         await callback.answer()
         return
-
-    text = BUTTON_TEXT_PRESETS[int(choice)]
-    data = await state.get_data()
-    await db.update_giveaway(data["giveaway_id"], button_text=text)
-    await state.set_state(NewLotStates.waiting_winners_count)
-    await callback.message.edit_text(
-        f"<b>Текст кнопки: «{esc(text)}»\n\nВведите количество победителей (число от 1 до 100):</b>"
-    )
+    giveaways = await db.list_all_giveaways()
+    await callback.message.edit_text("Все розыгрыши (по всем каналам):", reply_markup=giveaways_list_kb(giveaways))
     await callback.answer()
-
-
-@router.message(NewLotStates.waiting_button_text_custom, F.text)
-async def new_lot_button_text_custom(message: Message, state: FSMContext):
-    text = message.text.strip()
-    data = await state.get_data()
-    await db.update_giveaway(data["giveaway_id"], button_text=text)
-    await state.set_state(NewLotStates.waiting_winners_count)
-    await message.answer(f"Текст кнопки: «{esc(text)}»\n\nВведите количество победителей (число от 1 до 100):")
-
-
-@router.message(NewLotStates.waiting_winners_count, F.text)
-async def new_lot_winners_count(message: Message, state: FSMContext):
-    raw = message.text.strip()
-    if not raw.isdigit() or not (1 <= int(raw) <= 100):
-        await message.answer("Введите целое число от 1 до 100.")
+ 
+ 
+@router.callback_query(F.data.startswith("gv:"))
+async def gv_detail(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
         return
-
-    data = await state.get_data()
-    await db.update_giveaway(data["giveaway_id"], winners_count=int(raw))
-    await state.set_state(NewLotStates.waiting_datetime)
-    await message.answer(
-        "Дата и время итогов.\n"
-        "Формат: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n"
-        "Время — московское (МСК, UTC+3). Дата и время должны быть в будущем.\n\n"
-        "Например: 27.08.2026 15:30",
-        parse_mode="HTML",
-    )
-
-
-@router.message(NewLotStates.waiting_datetime, F.text)
-async def new_lot_datetime(message: Message, state: FSMContext):
-    try:
-        dt_msk = parse_msk_datetime(message.text)
-    except ValueError:
-        await message.answer(
-            "Не получилось разобрать дату. Проверьте формат "
-            "<code>ДД.ММ.ГГГГ ЧЧ:ММ</code> и что дата в будущем.",
-            parse_mode="HTML",
-        )
-        return
-
-    data = await state.get_data()
-    giveaway_id = data["giveaway_id"]
-    await db.update_giveaway(giveaway_id, draw_datetime=dt_msk.strftime("%d.%m.%Y %H:%M"))
-
-    giveaway = await db.get_giveaway(giveaway_id)
-    await state.set_state(NewLotStates.confirm)
-    await message.answer(
-        "<b>Проверьте розыгрыш перед публикацией:</b>\n\n"
-        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b> Канал:</b> {html.escape(giveaway['channel_title'])}\n"
-        f"<tg-emoji emoji-id=\"5438496463044752972\">⭐️</tg-emoji><b> Кнопка:</b> {html.escape(giveaway['button_text'])}\n"
-        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b> Победителей:</b> {giveaway['winners_count']}\n"
-        f"<tg-emoji emoji-id=\"5447410659077661506\">🌐</tg-emoji><b> Итоги:</b> {giveaway['draw_datetime']} (МСК)\n\n"
-        "<b>Готовы получить финальное сообщение с кнопкой?</b>",
-        reply_markup=confirm_publish_kb(giveaway_id),
-    )
-
-
-@router.callback_query(F.data.startswith("cancel_draft:"))
-async def new_lot_cancel(callback: CallbackQuery, state: FSMContext):
-    giveaway_id = int(callback.data.split(":")[1])
-    await db.update_giveaway(giveaway_id, status="finished")
-    await state.clear()
-    await callback.message.edit_text("Черновик отменён.")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("publish:"))
-async def new_lot_send_preview(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    """
-    Собирает финальное превью: копирует ваш пост НОВЫМ сообщением в ту же личку,
-    сразу с прикреплённой кнопкой «Участвовать». Поскольку это личный чат — не
-    канал — ограничение Telegram на анимированные эмодзи сюда не относится,
-    и анимация сохранится (при условии, что у владельца бота есть Premium).
-    """
     giveaway_id = int(callback.data.split(":")[1])
     giveaway = await db.get_giveaway(giveaway_id)
     if not giveaway:
         await callback.answer("Розыгрыш не найден", show_alert=True)
         return
-
-    me = await bot.get_me()
-    kb = giveaway_post_kb(me.username, giveaway_id, giveaway["button_text"])
-
-    await bot.copy_message(
-        chat_id=giveaway["source_chat_id"],
-        from_chat_id=giveaway["source_chat_id"],
-        message_id=giveaway["source_message_id"],
-        reply_markup=kb,
+    count = await db.count_participants(giveaway_id)
+    owner_username = await db.get_username_by_owner(giveaway["owner_id"])
+    owner_label = f"@{owner_username}" if owner_username else f"id {giveaway['owner_id']}"
+    status_ru = {"draft": "черновик", "published": "идёт", "finished": "завершён"}.get(giveaway["status"], giveaway["status"])
+    text = (
+        f"🎁 Розыгрыш #{giveaway_id}\n"
+        f"Канал: {esc(giveaway['channel_title'])}\n"
+        f"Создал (админ канала): {owner_label}\n"
+        f"Статус: {status_ru}\n"
+        f"Участников: {count}\n"
+        f"Победителей должно быть: {giveaway['winners_count']}\n"
+        f"Итоги: {giveaway['draw_datetime']} (МСК)"
     )
-
-    await db.update_giveaway(
-        giveaway_id,
-        status="awaiting_channel_post",
-        awaiting_since=datetime.now(timezone.utc).isoformat(),
-    )
-    await state.clear()
-    await callback.message.answer(
-        f"👆 Перешлите сообщение выше в канал «{esc(giveaway['channel_title'])}».\n\n"
-        "Кнопка при пересылке пропадёт — это нормально, бот сам заметит новый пост "
-        "в канале и прикрепит рабочую кнопку автоматически, обычно в течение пары секунд."
+    await callback.message.edit_text(text, reply_markup=giveaway_detail_kb(giveaway_id, giveaway["status"]))
+    await callback.answer()
+ 
+ 
+@router.callback_query(F.data.startswith("gv_participants:"))
+async def gv_participants(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    giveaway = await db.get_giveaway(giveaway_id)
+    participants = await db.list_participants(giveaway_id)
+ 
+    if not participants:
+        await callback.answer("Пока никто не участвует", show_alert=True)
+        return
+ 
+    # Список отправляем ФАЙЛОМ, а не сообщением — у Telegram жёсткий лимит
+    # на длину сообщения (~4096 символов), и список участников легко его
+    # превышает уже на сотне человек. Файл снимает это ограничение полностью.
+    lines = [f"Участники розыгрыша #{giveaway_id} — {giveaway['channel_title']} ({len(participants)}):", ""]
+    for p in participants:
+        uname = f"@{p['username']}" if p["username"] else "(без username)"
+        lines.append(f"{uname} — id {p['user_id']}")
+ 
+    file_content = "\n".join(lines).encode("utf-8")
+    document = BufferedInputFile(file_content, filename=f"participants_giveaway_{giveaway_id}.txt")
+ 
+    await callback.message.answer_document(
+        document=document,
+        caption=f"👥 Все участники розыгрыша #{giveaway_id} — {esc(giveaway['channel_title'])} ({len(participants)})",
     )
     await callback.answer()
-
-
-# ---------- автоматическое прикрепление кнопки после пересылки в канал ----------
-
-@router.channel_post(F.chat.type == "channel")
-async def on_channel_post(message: Message, bot: Bot):
-    """
-    Ловим ЛЮБОЙ новый пост в любом канале, где есть бот. Если для этого канала
-    есть розыгрыш в статусе 'awaiting_channel_post' — считаем, что это и есть
-    пересланное превью, и сразу прикрепляем кнопку.
-    """
-    giveaway = await db.get_awaiting_giveaway_for_channel(message.chat.id)
+ 
+ 
+@router.callback_query(F.data.startswith("gv_notify_all:"))
+async def gv_notify_all(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    giveaway = await db.get_giveaway(giveaway_id)
     if not giveaway:
-        return  # обычный пост канала, не имеющий отношения к розыгрышам — не трогаем
-
-    ok = await _attach_button(bot, giveaway, message.chat.id, message.message_id)
-    if ok:
+        await callback.answer("Розыгрыш не найден", show_alert=True)
+        return
+ 
+    participants = await db.list_participants(giveaway_id)
+    if not participants:
+        await callback.answer("Участников пока нет", show_alert=True)
+        return
+ 
+    await callback.answer(
+        f"Начинаю рассылку {len(participants)} участникам — это может занять время…",
+        show_alert=True,
+    )
+ 
+    text = (
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b>Поздравляем с победой, вы выиграли PlayStation 5!</b>\n"
+        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 1-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду - напишите менеджеру GGSel: @ggsellevents</b>\n"
+        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
+    )
+ 
+    success = 0
+    failed = []
+    for p in participants:
         try:
-            await bot.send_message(
-                giveaway["owner_id"],
-                f"<b>Кнопка автоматически прикреплена к посту в канале «{esc(giveaway['channel_title'])}»!</b>",
-            )
+            await bot.send_message(p["user_id"], text)
+            success += 1
         except (TelegramForbiddenError, TelegramBadRequest):
-            pass
-
-
-# ---------- запасной способ: ручная пересылка уже опубликованного поста ----------
-
-@router.message(F.forward_origin | F.forward_from_chat)
-async def manual_attach_fallback(message: Message, bot: Bot, state: FSMContext):
-    """
-    На случай, если автоматика по каким-то причинам не сработала (например, бот
-    был недоступен в момент публикации): создатель может вручную переслать уже
-    опубликованный (без кнопки) пост боту, и бот прикрепит кнопку тем же способом.
-    """
-    current_state = await state.get_state()
-    if current_state is not None:
-        return  # это сообщение уже обработано другим шагом мастера — не вмешиваемся
-
-    chat, source_message_id = _get_forward_info(message)
-    if chat is None or chat.type != "channel" or source_message_id is None:
-        return
-
-    giveaway = await db.get_awaiting_giveaway_for_channel(chat.id)
-    if not giveaway or giveaway["owner_id"] != message.from_user.id:
-        return
-
-    ok = await _attach_button(bot, giveaway, chat.id, source_message_id)
-    if ok:
-        await message.answer(f"✅ Кнопка прикреплена к посту в канале «{esc(giveaway['channel_title'])}» вручную.")
-    else:
-        await message.answer(
-            "Не удалось прикрепить кнопку. Проверьте, что у бота есть право "
-            "«Редактировать сообщения других участников» в этом канале."
+            failed.append(p)
+        await asyncio.sleep(0.05)  # не упереться в лимиты Telegram при массовой рассылке
+ 
+    summary_lines = [
+        f"📣 Рассылка по розыгрышу #{giveaway_id} — {esc(giveaway['channel_title'])} завершена.",
+        f"Всего участников: {len(participants)}",
+        f"✅ Доставлено: {success}",
+        f"❌ Не доставлено: {len(failed)}",
+    ]
+    await callback.message.answer("\n".join(summary_lines))
+ 
+    if failed:
+        fail_lines = [f"@{p['username']}" if p["username"] else str(p["user_id"]) for p in failed]
+        file_content = "\n".join(fail_lines).encode("utf-8")
+        document = BufferedInputFile(file_content, filename=f"failed_notify_giveaway_{giveaway_id}.txt")
+        await callback.message.answer_document(
+            document=document,
+            caption="Кому не удалось доставить (заблокировали бота или ещё не запускали его)",
         )
-
-
-# ---------- досрочное завершение своего розыгрыша (доступно любому создателю) ----------
-
-@router.message(Command("end_lot"))
-async def end_lot_start(message: Message):
-    giveaways = await db.list_giveaways_by_owner(message.from_user.id)
-    active = [g for g in giveaways if g["status"] == "published"]
-    if not active:
-        await message.answer("У вас нет активных розыгрышей, которые можно завершить досрочно.")
+ 
+ 
+@router.callback_query(F.data.startswith("gv_pick:"))
+async def gv_pick_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    await state.set_state(WinnerFlowStates.waiting_user_input)
+    await state.update_data(giveaway_id=giveaway_id)
+    await callback.message.answer(
+        "Введите @username или id пользователя-победителя (должен быть среди участников этого розыгрыша):"
+    )
+    await callback.answer()
+ 
+ 
+@router.message(WinnerFlowStates.waiting_user_input, F.text)
+async def gv_pick_finish(message: Message, state: FSMContext, bot: Bot):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+ 
+    data = await state.get_data()
+    giveaway_id = data["giveaway_id"]
+    giveaway = await db.get_giveaway(giveaway_id)
+ 
+    participant = await db.find_participant(giveaway_id, message.text)
+    if not participant:
+        await message.answer(
+            "Такой участник не найден среди зарегистрированных в этом розыгрыше. Проверьте id/username и попробуйте снова."
+        )
+        return
+ 
+    # За призом победитель пишет менеджеру, указанному в PRIZE_CONTACT_USERNAME
+    # (или, если контакт не задан в конфиге, тому, кто сейчас выбрал победителя).
+    contact = prize_contact(message.from_user.username)
+ 
+    win_text = (
+        f"🎉 Поздравляем! Вы выиграли в розыгрыше в канале «{esc(giveaway['channel_title'])}»!\n\n"
+        f"Чтобы получить приз, напишите: {contact}"
+    )
+ 
+    try:
+        await bot.send_message(participant["user_id"], win_text)
+    except (TelegramForbiddenError, TelegramBadRequest):
+        await message.answer(
+            "⚠️ Не удалось отправить сообщение победителю — пользователь заблокировал бота "
+            "или ещё не запускал его. Победитель зафиксирован, но уведомление не доставлено."
+        )
+        await db.add_winner(giveaway_id, participant["user_id"], participant["username"])
+        await state.clear()
+        return
+ 
+    await db.add_winner(giveaway_id, participant["user_id"], participant["username"])
+    await state.clear()
+    uname = f"@{participant['username']}" if participant["username"] else participant["user_id"]
+    await message.answer(f"Готово! Победитель {uname} уведомлён ✅")
+ 
+ 
+@router.callback_query(F.data.startswith("gv_winners:"))
+async def gv_winners(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    winners = await db.list_winners(giveaway_id)
+    if not winners:
+        await callback.answer("Победители ещё не выбраны", show_alert=True)
+        return
+ 
+    lines = ["🏆 Победители:\n"]
+    for w in winners:
+        uname = f"@{w['username']}" if w["username"] else w["user_id"]
+        reminded = " · напоминание отправлено" if w["reminder_sent_at"] else ""
+        lines.append(f"• {uname}{reminded}")
+ 
+    await callback.message.answer("\n".join(lines), reply_markup=winners_list_kb(giveaway_id, winners))
+    await callback.answer()
+ 
+ 
+@router.callback_query(F.data.startswith("gv_remind:"))
+async def gv_remind(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    _, giveaway_id, user_id = callback.data.split(":")
+    giveaway_id, user_id = int(giveaway_id), int(user_id)
+    giveaway = await db.get_giveaway(giveaway_id)
+ 
+    admin_username = callback.from_user.username
+    contact = prize_contact(admin_username)
+ 
+    reminder_text = (
+        f"⏰ Напоминаем: у вас остаётся мало времени, чтобы забрать приз "
+        f"в розыгрыше «{esc(giveaway['channel_title'])}»!\n\nСвяжитесь с {contact} как можно скорее."
+    )
+ 
+    try:
+        await bot.send_message(user_id, reminder_text)
+        await db.mark_reminder_sent(giveaway_id, user_id)
+        await callback.answer("Напоминание отправлено ✅", show_alert=True)
+    except (TelegramForbiddenError, TelegramBadRequest):
+        await callback.answer("Не удалось отправить — пользователь заблокировал бота", show_alert=True)
+ 
+ 
+# ---------- полная очистка данных ----------
+ 
+@router.message(Command("reset_all"))
+async def reset_all_start(message: Message):
+    if not is_admin(message.from_user.id):
         return
     await message.answer(
-        "Выберите розыгрыш, который нужно завершить досрочно (кнопка «Участвовать» будет убрана из поста):",
-        reply_markup=end_lot_list_kb(active),
+        "⚠️ Вы точно хотите удалить ВСЕ данные — все каналы, розыгрыши, участников, "
+        "победителей и пользователей? Это действие необратимо.",
+        reply_markup=reset_confirm_kb(),
     )
-
-
-@router.callback_query(F.data.startswith("end_lot:"))
-async def end_lot_ask_confirm(callback: CallbackQuery):
-    giveaway_id = int(callback.data.split(":")[1])
-    giveaway = await db.get_giveaway(giveaway_id)
-    if not giveaway or giveaway["owner_id"] != callback.from_user.id:
-        await callback.answer("Это не ваш розыгрыш", show_alert=True)
+ 
+ 
+@router.callback_query(F.data == "reset_confirm")
+async def reset_confirm(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
         return
-    await callback.message.edit_text(
-        f"Точно завершить розыгрыш в канале «{esc(giveaway['channel_title'])}» досрочно? "
-        f"Кнопка «Участвовать» будет убрана из поста, действие необратимо.",
-        reply_markup=end_lot_confirm_kb(giveaway_id),
-    )
+    await db.clear_all()
+    await state.clear()
+    await callback.message.edit_text("✅ Все данные удалены. База пустая, можно начинать заново.")
     await callback.answer()
-
-
-@router.callback_query(F.data.startswith("end_lot_yes:"))
-async def end_lot_finish(callback: CallbackQuery, bot: Bot):
-    giveaway_id = int(callback.data.split(":")[1])
-    giveaway = await db.get_giveaway(giveaway_id)
-    if not giveaway or giveaway["owner_id"] != callback.from_user.id:
-        await callback.answer("Это не ваш розыгрыш", show_alert=True)
+ 
+ 
+@router.callback_query(F.data == "reset_cancel")
+async def reset_cancel(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
         return
-
-    try:
-        await bot.edit_message_reply_markup(
-            chat_id=giveaway["source_chat_id"] if giveaway["status"] != "published" else giveaway["channel_id"],
-            message_id=giveaway["source_message_id"],
-            reply_markup=None,
-        )
-    except (TelegramBadRequest, TelegramForbiddenError):
-        pass  # если пост уже удалён или недоступен — не страшно, статус всё равно обновим
-
-    await db.update_giveaway(giveaway_id, status="finished")
-    await callback.message.edit_text("✅ Розыгрыш завершён, кнопка «Участвовать» убрана из поста.")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("end_lot_no:"))
-async def end_lot_cancel(callback: CallbackQuery):
-    await callback.message.edit_text("Отменено, розыгрыш продолжается.")
+    await callback.message.edit_text("Отменено, данные не тронуты.")
     await callback.answer()
