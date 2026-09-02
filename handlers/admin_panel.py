@@ -287,8 +287,10 @@ async def gv_remind(callback: CallbackQuery, bot: Bot):
     contact = prize_contact(admin_username)
 
     reminder_text = (
-        f"⏰ Напоминаем: у вас остаётся мало времени, чтобы забрать приз "
-        f"в розыгрыше «{esc(giveaway['channel_title'])}»!\n\nСвяжитесь с {contact} как можно скорее."
+        f"<tg-emoji emoji-id=\"5197335724411624959\">🎉</tg-emoji><b>Поздравляем с победой, вы выйграли PlayStation 5 от GGSel!</b>\n"
+        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 2-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду, напишите менеджеру GGSel: @ggsellevents</b>\n"
+        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
     )
 
     try:
