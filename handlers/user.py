@@ -42,21 +42,26 @@ async def start_with_payload(message: Message, command: CommandObject):
 
     if is_new:
         await message.answer(
-            f"<b><tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji> Вы участвуете в розыгрыше в канале «{esc(giveaway['channel_title'])}»!</b>\n"
+            f"<b><tg-emoji emoji-id=\"5197335724411624959\">🤳</tg-emoji> Отилчно! Вы участвуете в розыгрыше в канале «{esc(giveaway['channel_title'])}»!</b>\n"
             "<blockquote>"
-            f"<b>Результаты придут в бота, после подведения итогов розыгрыша.</b>"
+            f"<i>Результаты придут в бота, после подведения итогов розыгрыша.</i>\n\n"
             "</blockquote>"
+            "Удачи!<tg-emoji emoji-id=\"5195058485506648605\">🐱</tg-emoji>"
         )
     else:
-        await message.answer("<b>Вы уже участвуете в этом розыгрыше — заявка зарегистрирована</b>.")
+        await message.answer(
+            "<b>Вы уже участвуете в этом розыгрыше — ваша заявка успешно зарегистрирована.</b>.\n"
+            "Просто дождитесь итогов, результаты придут сюда автоматически."
+        )
 
 
 @router.message(CommandStart())
 async def start_plain(message: Message):
     await db.upsert_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer(
-        "<b>Привет! Я Pet, бот для розыгрышей в Telegram-каналах от GGSel</b>.\n\n"
-        "<b>Если вы владелец канала и хотите провести розыгрыш — используйте команду /new_lot</b>.\n"
-        "<b>Если вы попали сюда по кнопке «Участвовать» из канала — значит, всё сработало,</b> "
-        "<b>просто дождитесь результатов</b>."
+        "<b>Привет!</b><tg-emoji emoji-id=\"5195058485506648605\">👋</tg-emoji>\n"
+        "<b>Я Pet — бот для проведения розыгрышей в Telegram-каналах от GGSel.</b>\n\n"
+        "Если вы владелец канала и хотите организовать розыгрыш — просто напишите команду <code>/new_lot</code> и я помогу вам его устроить.<tg-emoji emoji-id=\"5323701775453165784\">🐱</tg-emoji>\n"
+        "Если вы нажали кнопку <b>«Участвовать»</b> в канале — не переживайте, вы участвуете в розыгрыше, осталось только дождаться результатов. Удачи!"
+        "<tg-emoji emoji-id=\"5195216901080390378\">✋</tg-emoji>"
     )
