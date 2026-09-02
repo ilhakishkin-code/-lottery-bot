@@ -313,6 +313,22 @@ async def mark_reminder_sent(giveaway_id: int, user_id: int):
         await db.commit()
 
 
+# ---------- удаление одного розыгрыша ----------
+
+async def delete_giveaway(giveaway_id: int):
+    """
+    Удаляет один конкретный розыгрыш и всё, что с ним связано (участников,
+    победителей). Остальные розыгрыши, каналы и пользователей не трогает.
+    Используется из админ-панели для точечной чистки "битых"/незавершённых лотов,
+    в отличие от clear_all(), который сносит вообще всё.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM winners WHERE giveaway_id = ?", (giveaway_id,))
+        await db.execute("DELETE FROM participants WHERE giveaway_id = ?", (giveaway_id,))
+        await db.execute("DELETE FROM giveaways WHERE id = ?", (giveaway_id,))
+        await db.commit()
+
+
 # ---------- полная очистка (для /reset_all) ----------
 
 async def clear_all():

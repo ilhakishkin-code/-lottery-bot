@@ -46,7 +46,16 @@ def giveaway_detail_kb(giveaway_id: int, status: str) -> InlineKeyboardMarkup:
     b.button(text="📣 Напомнить всем об итогах", callback_data=f"gv_notify_all:{giveaway_id}")
     b.button(text="🏆 Выбрать победителя", callback_data=f"gv_pick:{giveaway_id}")
     b.button(text="🔔 Победители и напоминания", callback_data=f"gv_winners:{giveaway_id}")
+    b.button(text="🗑 Удалить розыгрыш", callback_data=f"gv_delete:{giveaway_id}")
     b.button(text="⬅️ К списку розыгрышей", callback_data="gv_back")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def gv_delete_confirm_kb(giveaway_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="⚠️ Да, удалить этот розыгрыш", callback_data=f"gv_delete_yes:{giveaway_id}")
+    b.button(text="Отмена", callback_data=f"gv_delete_no:{giveaway_id}")
     b.adjust(1)
     return b.as_markup()
 
