@@ -9,7 +9,13 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 import database as db
 from states import WinnerFlowStates
 from config import ADMIN_IDS, PRIZE_CONTACT_USERNAME
-from keyboards import giveaways_list_kb, giveaway_detail_kb, winners_list_kb, reset_confirm_kb
+from keyboards import (
+    giveaways_list_kb,
+    giveaway_detail_kb,
+    winners_list_kb,
+    reset_confirm_kb,
+    gv_delete_confirm_kb,
+)
 from utils import esc
 
 router = Router(name="admin_panel")
@@ -164,12 +170,10 @@ async def gv_notify_all(callback: CallbackQuery, bot: Bot):
     )
 
     text = (
-        f"<tg-emoji emoji-id=\"5195058485506648605\">👋</tg-emoji><b>Поздравляем с победой, вы выйграли PlayStation 5 от GGSel!</b>\n"
-        f"<tg-emoji emoji-id=\"5323701775453165784\">🐱</tg-emoji><b>Вы заняли 2-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
-        f"<tg-emoji emoji-id=\"5195202345436224393\">🫰</tg-emoji><b>Чтобы получить выигрыш, напишите пожалуйста нашему менеджеру GGSel: @ggsellevents</b>\n"
-        f"<tg-emoji emoji-id=\"5197335724411624959\">🤳</tg-emoji><b>Менеджер быстро всё проверит и поможет вам с получением PlayStation 5.</b>\n\n"
-        f"<tg-emoji emoji-id=\"5323382938555949335\">🫧</tg-emoji><b>Ваш уникальный номер билета #1733; Сообщите его менеджеру, чтобы подтвердить и получить выигрыш.</b>\n"
-        f"<tg-emoji emoji-id=\"5447644880824181073\">⚠️</tg-emoji><b>Важно: До того пока не свяжетесь с менеджером, не сообщайте никому о выйгрыше (в группы, знакомым в интернете и т.д), чтобы избежать мошенничества и потери приза!</b>"
+        f"<tg-emoji emoji-id=\"5461151367559141950\">🎉</tg-emoji><b>Поздравляем с победой, вы выиграли PlayStation 5!</b>\n"
+        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 1-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
+        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду - напишите менеджеру GGSel: @ggsellevents</b>\n"
+        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
     )
 
     success = 0
@@ -198,6 +202,44 @@ async def gv_notify_all(callback: CallbackQuery, bot: Bot):
             document=document,
             caption="Кому не удалось доставить (заблокировали бота или ещё не запускали его)",
         )
+
+
+@router.callback_query(F.data.startswith("gv_remove_participant:"))
+async def gv_remove_participant_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    await state.set_state(WinnerFlowStates.waiting_remove_input)
+    await state.update_data(giveaway_id=giveaway_id)
+    await callback.message.answer(
+        "Введите @username или id участника, которого нужно убрать из этого розыгрыша "
+        "(например, тестовые аккаунты, которые просто проверяли, что бот отвечает):"
+    )
+    await callback.answer()
+
+
+@router.message(WinnerFlowStates.waiting_remove_input, F.text)
+async def gv_remove_participant_finish(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    giveaway_id = data["giveaway_id"]
+
+    participant = await db.find_participant(giveaway_id, message.text)
+    if not participant:
+        await message.answer(
+            "Такой участник не найден среди зарегистрированных в этом розыгрыше. "
+            "Проверьте id/username и попробуйте снова, либо отправьте /giveaways, чтобы выйти из этого режима."
+        )
+        return
+
+    await db.remove_participant(giveaway_id, participant["user_id"])
+    await state.clear()
+    uname = f"@{participant['username']}" if participant["username"] else participant["user_id"]
+    await message.answer(f"🚫 Участник {uname} удалён из розыгрыша #{giveaway_id}.")
 
 
 @router.callback_query(F.data.startswith("gv_pick:"))
@@ -291,10 +333,8 @@ async def gv_remind(callback: CallbackQuery, bot: Bot):
     contact = prize_contact(admin_username)
 
     reminder_text = (
-        f"<tg-emoji emoji-id=\"5197335724411624959\">🎉</tg-emoji><b>Поздравляем с победой, вы выйграли PlayStation 5 от GGSel!</b>\n"
-        f"<tg-emoji emoji-id=\"5440539497383087970\">🥇</tg-emoji><b>Вы заняли 2-е место в розыгрыше в канале «{giveaway['channel_title']}» от GGSel — ваш приз уже ждёт вас!</b>\n\n"
-        f"<tg-emoji emoji-id=\"5253742260054409879\">✉️</tg-emoji><b>Чтобы получить награду, напишите менеджеру GGSel: @ggsellevents</b>\n"
-        f"<tg-emoji emoji-id=\"5416117059207572332\">➡️</tg-emoji><b>Менеджер быстро всё проверит и поможет с получением приза.</b>"
+        f"⏰ Напоминаем: у вас остаётся мало времени, чтобы забрать приз "
+        f"в розыгрыше «{esc(giveaway['channel_title'])}»!\n\nСвяжитесь с {contact} как можно скорее."
     )
 
     try:
@@ -303,6 +343,63 @@ async def gv_remind(callback: CallbackQuery, bot: Bot):
         await callback.answer("Напоминание отправлено ✅", show_alert=True)
     except (TelegramForbiddenError, TelegramBadRequest):
         await callback.answer("Не удалось отправить — пользователь заблокировал бота", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("gv_delete:"))
+async def gv_delete_ask(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    giveaway = await db.get_giveaway(giveaway_id)
+    if not giveaway:
+        await callback.answer("Розыгрыш не найден", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"⚠️ Точно удалить розыгрыш #{giveaway_id} — {esc(giveaway['channel_title'])}?\n"
+        f"Все участники и победители этого розыгрыша тоже будут удалены. Действие необратимо.",
+        reply_markup=gv_delete_confirm_kb(giveaway_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gv_delete_yes:"))
+async def gv_delete_confirm(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    await db.delete_giveaway(giveaway_id)
+    await callback.message.edit_text(f"✅ Розыгрыш #{giveaway_id} удалён.")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gv_delete_no:"))
+async def gv_delete_cancel(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    giveaway = await db.get_giveaway(giveaway_id)
+    if not giveaway:
+        await callback.message.edit_text("Розыгрыш не найден (возможно, уже удалён).")
+        await callback.answer()
+        return
+    count = await db.count_participants(giveaway_id)
+    owner_username = await db.get_username_by_owner(giveaway["owner_id"])
+    owner_label = f"@{owner_username}" if owner_username else f"id {giveaway['owner_id']}"
+    status_ru = {"draft": "черновик", "published": "идёт", "finished": "завершён"}.get(giveaway["status"], giveaway["status"])
+    text = (
+        f"🎁 Розыгрыш #{giveaway_id}\n"
+        f"Канал: {esc(giveaway['channel_title'])}\n"
+        f"Создал (админ канала): {owner_label}\n"
+        f"Статус: {status_ru}\n"
+        f"Участников: {count}\n"
+        f"Победителей должно быть: {giveaway['winners_count']}\n"
+        f"Итоги: {giveaway['draw_datetime']} (МСК)"
+    )
+    await callback.message.edit_text(text, reply_markup=giveaway_detail_kb(giveaway_id, giveaway["status"]))
+    await callback.answer()
 
 
 # ---------- полная очистка данных ----------
