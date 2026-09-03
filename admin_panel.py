@@ -204,6 +204,44 @@ async def gv_notify_all(callback: CallbackQuery, bot: Bot):
         )
 
 
+@router.callback_query(F.data.startswith("gv_remove_participant:"))
+async def gv_remove_participant_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    giveaway_id = int(callback.data.split(":")[1])
+    await state.set_state(WinnerFlowStates.waiting_remove_input)
+    await state.update_data(giveaway_id=giveaway_id)
+    await callback.message.answer(
+        "Введите @username или id участника, которого нужно убрать из этого розыгрыша "
+        "(например, тестовые аккаунты, которые просто проверяли, что бот отвечает):"
+    )
+    await callback.answer()
+
+
+@router.message(WinnerFlowStates.waiting_remove_input, F.text)
+async def gv_remove_participant_finish(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    giveaway_id = data["giveaway_id"]
+
+    participant = await db.find_participant(giveaway_id, message.text)
+    if not participant:
+        await message.answer(
+            "Такой участник не найден среди зарегистрированных в этом розыгрыше. "
+            "Проверьте id/username и попробуйте снова, либо отправьте /giveaways, чтобы выйти из этого режима."
+        )
+        return
+
+    await db.remove_participant(giveaway_id, participant["user_id"])
+    await state.clear()
+    uname = f"@{participant['username']}" if participant["username"] else participant["user_id"]
+    await message.answer(f"🚫 Участник {uname} удалён из розыгрыша #{giveaway_id}.")
+
+
 @router.callback_query(F.data.startswith("gv_pick:"))
 async def gv_pick_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):

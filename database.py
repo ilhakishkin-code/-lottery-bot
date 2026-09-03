@@ -246,6 +246,22 @@ async def find_participant(giveaway_id: int, query: str) -> Optional[dict]:
         return dict(row) if row else None
 
 
+async def remove_participant(giveaway_id: int, user_id: int) -> bool:
+    """
+    Убирает одного человека из участников конкретного розыгрыша (например,
+    тестовый аккаунт, который просто проверял, что бот отвечает). На другие
+    розыгрыши и на его победы/начисления в других лотах не влияет.
+    Возвращает True, если такой участник был и удалён; False — если его и так не было.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "DELETE FROM participants WHERE giveaway_id = ? AND user_id = ?",
+            (giveaway_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
 async def channel_stats_by_owner(owner_id: int) -> list[dict]:
     """Сколько участников набрал каждый канал владельца — суммарно по всем его розыгрышам."""
     async with aiosqlite.connect(DB_PATH) as db:

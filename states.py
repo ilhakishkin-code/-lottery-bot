@@ -12,3 +12,4 @@ class NewLotStates(StatesGroup):
 
 class WinnerFlowStates(StatesGroup):
     waiting_user_input = State()   # ждём @username / id для выбора победителя
+    waiting_remove_input = State()  # ждём @username / id участника, которого нужно убрать из списка
