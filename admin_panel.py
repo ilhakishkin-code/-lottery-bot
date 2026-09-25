@@ -172,7 +172,7 @@ async def gv_notify_all(callback: CallbackQuery, bot: Bot):
     text = (
         f"<tg-emoji emoji-id=\"5195058485506648605\">👋</tg-emoji><b>Поздравляем с победой, вы выйграли PlayStation 5 от GGSel!</b>\n\n"
         f"<tg-emoji emoji-id=\"5323701775453165784\">🐱</tg-emoji>Вы заняли <b>2-е место</b> в розыгрыше в канале «{giveaway['channel_title']}» от <b>GGSel</b> — ваш приз уже ждёт вас!\n\n"
-        f"<tg-emoji emoji-id=\"5195202345436224393\">🫰</tg-emoji><b>Чтобы получить выигрыш, напишите пожалуйста нашему менеджеру GGSel: @ggsellevents</b>\n"
+        f"<tg-emoji emoji-id=\"5195202345436224393\">🫰</tg-emoji><b>Чтобы получить выигрыш, напишите пожалуйста нашему менеджеру GGSel: @ggselevens</b>\n"
         "<blockquote>"
         f"<tg-emoji emoji-id=\"5197335724411624959\">🤳</tg-emoji><b>Менеджер быстро всё проверит и поможет вам с получением PlayStation 5.</b>"
         "</blockquote>\n\n"
